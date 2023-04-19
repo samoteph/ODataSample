@@ -50,7 +50,7 @@ namespace ODataRoutingSample.Controllers
                 // fill the dictionary dynamicaly
                 .Select(s=>AddAsDynamicProperty(s));
 
-            // Exeception durint he execution of the query
+            // Exeception during the execution of the query
             // I understand that the dictionary is not part of the context database but shouldn't the call
             // to the dynamic property be removed from the current filter expression and executed after the SQL query? For example the DiseaseIndex gt 0 filter should not be executed after the database data retrieval foreach?             
             return Ok(sams);
