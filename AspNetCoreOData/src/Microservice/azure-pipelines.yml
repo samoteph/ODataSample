@@ -1,0 +1,94 @@
+name: "$(majorMinorVersion).$(semanticVersion)"
+
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - src
+
+variables:
+  - group: framework-pipelines-variables
+  - name: majorMinorVersion
+    value: 3.0
+  - name: semanticVersion
+    value: $[counter(variables['majorMinorVersion'], 0)]
+  - name: productVersion
+    value: "$(majorMinorVersion).$(semanticVersion)"
+
+pool:
+  vmImage: $(vmImageName)
+
+stages:
+  - stage: build
+    displayName: Build stage
+    jobs:
+      - job: build
+        displayName: Build
+        continueOnError: false
+
+        steps:
+          - task: UseDotNet@2
+            displayName: "Use .NET Core SDK $(sdkVersion)"
+            inputs:
+              packageType: sdk
+              version: $(sdkVersion)
+              installationPath: $(Agent.ToolsDirectory)/dotnet
+
+          - task: DotNetCoreCLI@2
+            displayName: "dotnet restore"
+            inputs:
+              command: "restore"
+              projects: "**/*.sln"
+              feedsToUse: "select"
+              vstsFeed: "scamark"
+              includeNuGetOrg: true
+              noCache: true
+
+          - task: DotNetCoreCLI@2
+            displayName: "dotnet pack"
+            inputs:
+              command: "custom"
+              projects: "src/**/*.csproj"
+              custom: "pack"
+              arguments: "--no-restore --output $(Build.ArtifactStagingDirectory) --verbosity Normal -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -p:Configuration=$(buildConfiguration) -p:Version=$(productVersion) -p:PackageVersion=$(productVersion)"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Artifacts"
+            inputs:
+              targetPath: "$(Build.ArtifactStagingDirectory)"
+              artifact: "nuget"
+              publishLocation: "pipeline"
+
+  - stage: publish
+    displayName: Publish stage
+    dependsOn: build
+    condition: succeeded('build')
+
+    jobs:
+      - job: publish
+        continueOnError: false
+        displayName: Publish to Scamark Artifacts
+        steps:
+          # - task: UseDotNet@2
+          #   displayName: 'Use .NET Core SDK $(sdkVersion)'
+          #   inputs:
+          #     packageType: sdk
+          #     version: $(sdkVersion)
+          #     installationPath: $(Agent.ToolsDirectory)/dotnet
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Artifacts
+            inputs:
+              buildType: "current"
+              artifactName: "nuget"
+              targetPath: "$(Pipeline.Workspace)"
+
+          - task: DotNetCoreCLI@2
+            displayName: "dotnet push (nuget)"
+            inputs:
+              command: "push"
+              packagesToPush: "$(Pipeline.Workspace)/*.*nupkg"
+              nuGetFeedType: "internal"
+              publishVstsFeed: "scamark"
